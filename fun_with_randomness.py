@@ -8,6 +8,7 @@ import time
 
 base_url = "https://www.random.org/"
 max_request_size = 10000
+max_failed_requests = 200
 
 def create_rgb_bitmap(width, height):
     """A function to randomly generate a rgb bitmap using PIL for easy visualization.
@@ -23,23 +24,8 @@ def create_rgb_bitmap(width, height):
 
     # Generate random values for all pixel intensities
     num_pixels, num_generated = 3 * width * height, 0
-    rand_vals = []
-
-    # Pull in chunks of the max request size until we have enough pixel vals
-    while num_generated < num_pixels:
-        if (num_pixels - num_generated < max_request_size):
-            to_add = rand_int(num_pixels - num_generated, 0, 255)
-        else:
-            to_add = rand_int(max_request_size, 0, 255)
-
-        # Ensure that the request was successfull
-        if (to_add != None):
-            num_generated += len(to_add)
-            rand_vals += to_add
-        
-        # Add short delay between requests -- don't want to overload server
-        time.sleep(1) 
-
+    rand_vals = rand_int(num_pixels, 0, 255)
+    if rand_vals == None: return None
 
     pixel_vals = [(rand_vals[i], rand_vals[i+1], rand_vals[i+2]) for i in range(0, num_pixels, 3)]
 
@@ -54,11 +40,11 @@ def create_rgb_bitmap(width, height):
 
     return img
 
-def rand_int(num, min, max, base=10, format="plain", rnd="new"):
+def rand_int(num_to_generate, min, max, base=10, format="plain", rnd="new"):
     """A function to generate a truly random integer.
 
     Args:
-        num (int): The number of random numbers to generate
+        num_to_generate (int): The number of random numbers to generate
         min (int): The minimum value of the random number
         max (int): The maximum value of the random number
         base (int): The base of the number when printing
@@ -67,23 +53,43 @@ def rand_int(num, min, max, base=10, format="plain", rnd="new"):
 
     Returns:
         list: A list of random integers in unicode text format
-        None: None if there was a failure
+        None: None if we exceed the max number of failed attempts
 
     TODO: Handle all response codes
     """
 
-    # Always set num columns to 1, we can parse out the values
-    col = 1
-    url = '{}integers/?num={}&min={}&max={}&col={}&base={}&format={}&rnd={}'.format(base_url, num, min, max, col, base, format, rnd)
-    r = requests.get(url)
-    if r.status_code != 200:    # TODO: Handle all error codes
-        print("{}".format(r.text))
-        return None
+    rand_vals = []
+    num_generated = 0
+    failed_attempts = 0
 
-    text = r.text
-    return [int(s.strip()) for s in text.splitlines()]
+    # Pull in chunks of the max request size until we have enough random vals
+    while num_generated < num_to_generate:
 
+        # Check if we've exceeded our max number of attempts
+        if failed_attempts > max_failed_requests:
+            print("Exceeded max number of requests.")
+            return None
 
+        if (num_to_generate - num_generated < max_request_size):
+            cur_req_size = num_to_generate - num_generated
+        else:
+            cur_req_size = max_request_size
+
+        # Make a request
+        url = '{}integers/?num={}&min={}&max={}&col={}&base={}&format={}&rnd={}'.format(base_url, cur_req_size, min, max, 1, base, format, rnd)
+        r = requests.get(url)
+        if r.status_code != 200:    # TODO: Handle all error codes
+            print("{}".format(r.text))
+            failed_attempts += 1
+        else:
+            num_generated += cur_req_size
+            text = r.text
+            rand_vals += [int(s.strip()) for s in text.splitlines()]
+
+        # Add short delay between requests -- don't want to overload server
+        time.sleep(1) 
+
+    return rand_vals
 
 def main():
     # Demo: Print out 10 with random numbers
